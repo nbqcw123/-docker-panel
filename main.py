@@ -697,9 +697,6 @@ body {
 
 /* ========== PORTS BAR ========== */
 .ports-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
   margin-bottom: 20px;
   padding: 16px 20px;
   background: var(--card);
@@ -708,11 +705,10 @@ body {
   box-shadow: 0 2px 8px var(--shadow);
 }
 .ports-bar-header {
-  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 .ports-bar-title {
   font-size: 14px;
@@ -720,9 +716,6 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.ports-bar-title .icon {
-  font-size: 18px;
 }
 .ports-bar-count {
   font-size: 12px;
@@ -732,11 +725,16 @@ body {
   border-radius: 12px;
   border: 1px solid var(--border);
 }
-.port-item {
-  display: inline-flex;
-  align-items: center;
+.ports-list {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
-  padding: 6px 12px;
+}
+.port-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
   background: var(--bg2);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
@@ -749,23 +747,26 @@ body {
 .port-item:hover {
   border-color: var(--accent);
   background: var(--card-hover);
-  transform: translateY(-1px);
+  transform: translateX(2px);
   box-shadow: 0 2px 8px var(--shadow);
 }
 .port-item .port-num {
   color: var(--accent);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
+  min-width: 50px;
+  text-align: right;
 }
 .port-item .port-arrow {
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: 12px;
 }
 .port-item .port-container {
   color: var(--text-dim);
   font-size: 11px;
   font-weight: 400;
-  max-width: 120px;
+  margin-left: auto;
+  max-width: 150px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -780,6 +781,144 @@ body {
   font-size: 13px;
   padding: 8px 0;
 }
+
+/* ========== MAIN LAYOUT ========== */
+.main-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+.ports-sidebar {
+  position: sticky;
+  top: 70px;
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+}
+.ports-sidebar .ports-bar {
+  margin-bottom: 12px;
+}
+.ports-sidebar .system-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ports-sidebar .sys-card {
+  padding: 12px 14px;
+}
+.ports-sidebar .sys-card .value {
+  font-size: 18px;
+}
+.content-area {
+  min-width: 0;
+}
+
+/* ========== CONTAINER ROW ========== */
+.container-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+  transition: all var(--transition);
+}
+.container-row:hover {
+  border-color: var(--accent);
+  background: var(--card-hover);
+  transform: translateX(2px);
+  box-shadow: 0 2px 8px var(--shadow);
+}
+.container-row .row-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.container-row .row-status.running { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 2s infinite; }
+.container-row .row-status.exited { background: var(--red); }
+.container-row .row-status.paused { background: var(--yellow); }
+.container-row .row-status.created { background: var(--accent); }
+.container-row .row-name {
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 140px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-bright);
+}
+.container-row .row-image {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: 'SF Mono', 'Cascadia Code', monospace;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.container-row .row-ports {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+.container-row .row-port {
+  font-size: 11px;
+  font-family: 'SF Mono', 'Cascadia Code', monospace;
+  padding: 2px 6px;
+  background: rgba(88,166,255,0.08);
+  color: var(--accent);
+  border-radius: 4px;
+  border: 1px solid rgba(88,166,255,0.15);
+}
+.container-row .row-stats {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+  min-width: 120px;
+  justify-content: flex-end;
+}
+.container-row .row-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.container-row .row-actions button {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  transition: all var(--transition);
+}
+.container-row .row-actions button:disabled { opacity: 0.3; pointer-events: none; }
+.container-row .row-actions .start:not(:disabled) { border-color: var(--green-dim); color: var(--green); }
+.container-row .row-actions .start:hover:not(:disabled) { background: rgba(63,185,80,0.1); }
+.container-row .row-actions .stop:not(:disabled) { border-color: var(--red-dim); color: var(--red); }
+.container-row .row-actions .stop:hover:not(:disabled) { background: rgba(248,81,73,0.1); }
+.container-row .row-actions .restart:not(:disabled) { border-color: var(--yellow-dim); color: var(--yellow); }
+.container-row .row-actions .restart:hover:not(:disabled) { background: rgba(210,153,34,0.1); }
+
+@media (max-width: 1200px) {
+  .main-layout { grid-template-columns: 220px 1fr; }
+}
+@media (max-width: 900px) {
+  .main-layout { grid-template-columns: 1fr; }
+  .ports-sidebar { position: static; max-height: none; }
+  .container-row { flex-wrap: wrap; }
+  .container-row .row-stats { width: 100%; justify-content: flex-start; }
+}
+
+/* ========== SYSTEM BAR ========== */
 .system-bar {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -866,221 +1005,14 @@ body {
   border: 1px solid var(--border);
 }
 
-/* ========== GRID ========== */
-.container-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-  gap: 14px;
-}
-
-/* ========== CARD ========== */
-.container-card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 18px;
-  transition: all var(--transition);
-  position: relative;
-  overflow: hidden;
-}
-.container-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  border-radius: var(--radius) var(--radius) 0 0;
-}
-.container-card.running::before { background: linear-gradient(90deg, var(--green), var(--cyan)); }
-.container-card.exited::before { background: linear-gradient(90deg, var(--red), var(--orange)); }
-.container-card.paused::before { background: linear-gradient(90deg, var(--yellow), var(--orange)); }
-.container-card.created::before { background: linear-gradient(90deg, var(--accent), var(--purple)); }
-.container-card:hover {
-  border-color: var(--accent);
-  background: var(--card-hover);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px var(--shadow);
-}
-
-/* Card Top */
-.card-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 14px;
-  gap: 10px;
-}
-.card-name {
-  font-size: 15px;
-  font-weight: 700;
-  word-break: break-all;
-  line-height: 1.4;
-  color: var(--text-bright);
-}
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border-radius: 14px;
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.status-badge::before {
-  content: '';
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.status-badge.running { background: rgba(63,185,80,0.12); color: var(--green); }
-.status-badge.running::before { background: var(--green); animation: pulse 2s infinite; }
-.status-badge.exited { background: rgba(248,81,73,0.1); color: var(--red); }
-.status-badge.exited::before { background: var(--red); }
-.status-badge.paused { background: rgba(210,153,34,0.1); color: var(--yellow); }
-.status-badge.paused::before { background: var(--yellow); }
-.status-badge.created { background: rgba(88,166,255,0.1); color: var(--accent); }
-.status-badge.created::before { background: var(--accent); }
-@keyframes pulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 currentColor; } 50% { opacity: 0.5; box-shadow: 0 0 0 4px transparent; } }
-
-/* Meta */
-.card-meta {
+/* ========== CONTAINER ROWS ========== */
+.container-rows {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  margin-bottom: 14px;
-  padding: 10px 12px;
-  background: var(--bg2);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-light);
-}
-.meta-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--text-dim);
-}
-.meta-row .key { min-width: 36px; font-weight: 500; }
-.meta-row .val {
-  color: var(--text);
-  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
-  font-size: 11px;
-  opacity: 0.9;
+  gap: 6px;
 }
 
-/* Stats */
-.stats-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-.stat-box {
-  background: var(--bg2);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-}
-.stat-box .stat-label { font-size: 11px; color: var(--text-dim); margin-bottom: 5px; font-weight: 500; }
-.stat-box .stat-value { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; }
-.stat-box .stat-bar {
-  height: 4px;
-  background: var(--border);
-  border-radius: 2px;
-  margin-top: 7px;
-  overflow: hidden;
-}
-.stat-box .stat-bar-fill {
-  height: 100%;
-  border-radius: 2px;
-  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Ports */
-.ports-list { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 14px; }
-.port-badge {
-  background: rgba(88,166,255,0.08);
-  color: var(--accent);
-  padding: 3px 8px;
-  border-radius: var(--radius-xs);
-  font-size: 11px;
-  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
-  border: 1px solid rgba(88,166,255,0.15);
-}
-
-/* Actions */
-.actions { display: flex; gap: 8px; }
-.actions button {
-  flex: 1;
-  padding: 8px 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  background: transparent;
-  color: var(--text);
-  transition: all var(--transition);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-}
-.actions button:hover { background: var(--card-hover); transform: translateY(-1px); }
-.actions button:active { transform: translateY(0); }
-.actions button:disabled { opacity: 0.3; pointer-events: none; cursor: not-allowed; transform: none; }
-.actions button.start { border-color: var(--green-dim); color: var(--green); }
-.actions button.start:hover:not(:disabled) { background: rgba(63,185,80,0.1); border-color: var(--green); }
-.actions button.stop { border-color: var(--red-dim); color: var(--red); }
-.actions button.stop:hover:not(:disabled) { background: rgba(248,81,73,0.1); border-color: var(--red); }
-.actions button.restart { border-color: var(--yellow-dim); color: var(--yellow); }
-.actions button.restart:hover:not(:disabled) { background: rgba(210,153,34,0.1); border-color: var(--yellow); }
-.actions button.loading { position: relative; color: transparent; }
-.actions button.loading::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 14px;
-  height: 14px;
-  margin: -7px 0 0 -7px;
-  border: 2px solid currentColor;
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-
-/* Empty */
-.empty-state {
-  text-align: center;
-  padding: 50px 20px;
-  color: var(--text-dim);
-  font-size: 14px;
-  grid-column: 1 / -1;
-}
-.empty-state .icon { font-size: 40px; margin-bottom: 10px; opacity: 0.5; }
-
-/* Toast */
-.toast {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 12px 18px;
-  font-size: 13px;
-  font-weight: 500;
-  z-index: 200;
-  transform: translateY(100px);
-  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 12px 32px var(--shadow);
-}
+/* Animations */
 .toast.show { transform: translateY(0); }
 .toast.success { border-left: 3px solid var(--green); }
 .toast.error { border-left: 3px solid var(--red); }
@@ -1149,32 +1081,35 @@ body {
 
 <div id="errorBanner"></div>
 
-<div class="ports-bar" id="portsBar">
-  <div class="ports-bar-header">
-    <div class="ports-bar-title">
-      <span class="icon">🔌</span>
-      已占用端口
+<div class="main-layout">
+  <!-- 左侧：端口占用 -->
+  <div class="ports-sidebar">
+    <div class="ports-bar">
+      <div class="ports-bar-header">
+        <div class="ports-bar-title">🔌 已占用端口</div>
+        <span class="ports-bar-count" id="portsCount">0 个端口</span>
+      </div>
+      <div class="ports-list" id="portsList"></div>
     </div>
-    <span class="ports-bar-count" id="portsCount">0 个端口</span>
+    <div class="system-bar" id="systemBar"></div>
   </div>
-  <div id="portsList"></div>
+
+  <!-- 右侧：容器列表 -->
+  <div class="content-area">
+    <div class="category-bar" id="categoryBar">
+      <div class="cat-tab active" data-cat="all" onclick="setCategory('all')">
+        📦 全部 <span class="count" id="count-all">0</span>
+      </div>
+      <div class="cat-tab" data-cat="running" onclick="setCategory('running')">
+        🟢 使用中 <span class="count" id="count-running">0</span>
+      </div>
+      <div class="cat-tab" data-cat="stopped" onclick="setCategory('stopped')">
+        🔴 未使用 <span class="count" id="count-stopped">0</span>
+      </div>
+    </div>
+    <div id="sectionsContainer"></div>
+  </div>
 </div>
-
-<div class="system-bar" id="systemBar"></div>
-
-<div class="category-bar" id="categoryBar">
-  <div class="cat-tab active" data-cat="all" onclick="setCategory('all')">
-    📦 全部 <span class="count" id="count-all">0</span>
-  </div>
-  <div class="cat-tab" data-cat="running" onclick="setCategory('running')">
-    🟢 使用中 <span class="count" id="count-running">0</span>
-  </div>
-  <div class="cat-tab" data-cat="stopped" onclick="setCategory('stopped')">
-    🔴 未使用 <span class="count" id="count-stopped">0</span>
-  </div>
-</div>
-
-<div id="sectionsContainer"></div>
 
 <div class="toast" id="toast"></div>
 
@@ -1342,8 +1277,8 @@ function renderContainers() {
       </div>
       <span class="section-count">${running.length} 个容器</span>
     </div>`;
-    html += `<div class="container-grid">`;
-    html += running.map((c, i) => renderCard(c, i)).join('');
+    html += `<div class="container-rows">`;
+    html += running.map((c, i) => renderRow(c, i)).join('');
     html += `</div>`;
   }
 
@@ -1355,8 +1290,8 @@ function renderContainers() {
       </div>
       <span class="section-count">${stopped.length} 个容器</span>
     </div>`;
-    html += `<div class="container-grid">`;
-    html += stopped.map((c, i) => renderCard(c, i)).join('');
+    html += `<div class="container-rows">`;
+    html += stopped.map((c, i) => renderRow(c, i)).join('');
     html += `</div>`;
   }
 
@@ -1370,42 +1305,27 @@ function renderContainers() {
   container.innerHTML = html;
 }
 
-function renderCard(c, index) {
+function renderRow(c, index) {
   const state = c.state || 'unknown';
   const isRunning = state === 'running';
   const isStopped = state === 'exited' || state === 'dead';
   const isCreated = state === 'created';
 
-  // Stagger animation
-  const delay = Math.min(index * 0.03, 0.5);
-
-  // Ports
+  // Ports for this container
   const portsHtml = (c.ports || [])
     .filter(p => p.host_port)
-    .map(p => `<span class="port-badge">${p.host_ip}:${p.host_port}→${p.container_port}/${p.type}</span>`)
+    .map(p => `<span class="row-port">${p.host_port}→${p.container_port}/${p.type}</span>`)
     .join('');
 
   // Stats
   let statsHtml = '';
   if (c.stats && isRunning) {
     const cpu = c.stats.cpu_percent || 0;
-    const memPct = c.stats.memory_percent || 0;
     const memUse = c.stats.memory_usage_mb || 0;
     const memLimit = c.stats.memory_limit_mb || 0;
-    const cpuColor = cpu > 80 ? 'var(--red)' : cpu > 50 ? 'var(--yellow)' : 'var(--green)';
-    const memColor = memPct > 80 ? 'var(--red)' : memPct > 50 ? 'var(--yellow)' : 'var(--accent)';
-    statsHtml = `<div class="stats-row">
-      <div class="stat-box">
-        <div class="stat-label">CPU</div>
-        <div class="stat-value" style="color:${cpuColor}">${cpu}%</div>
-        <div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.min(cpu,100)}%;background:${cpuColor}"></div></div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-label">内存</div>
-        <div class="stat-value" style="color:${memColor}">${memUse} <span style="font-size:11px;color:var(--text-dim)">/ ${memLimit} MB</span></div>
-        <div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.min(memPct,100)}%;background:${memColor}"></div></div>
-      </div>
-    </div>`;
+    statsHtml = `<span>CPU ${cpu}%</span><span>MEM ${memUse}/${memLimit}MB</span>`;
+  } else {
+    statsHtml = '<span>-</span>';
   }
 
   // Action buttons
@@ -1413,21 +1333,16 @@ function renderCard(c, index) {
   const stopDisabled = (isStopped || isCreated) ? 'disabled' : '';
   const restartDisabled = (isStopped || isCreated) ? 'disabled' : '';
 
-  return `<div class="container-card ${state}" id="card-${c.id}" style="animation-delay:${delay}s">
-    <div class="card-top">
-      <div class="card-name">${escHtml(c.name)}</div>
-      <span class="status-badge ${state}">${escHtml(c.status || state)}</span>
-    </div>
-    <div class="card-meta">
-      <div class="meta-row"><span class="key">镜像</span><span class="val">${escHtml(c.image || '-')}</span></div>
-      <div class="meta-row"><span class="key">ID</span><span class="val">${c.id}</span></div>
-    </div>
-    ${statsHtml}
-    ${portsHtml ? `<div class="ports-list">${portsHtml}</div>` : '<div style="height:8px"></div>'}
-    <div class="actions">
-      <button class="start" ${startDisabled} onclick="doAction('${c.id}','start',this)">▶ 启动</button>
-      <button class="stop" ${stopDisabled} onclick="doAction('${c.id}','stop',this)">⏹ 停止</button>
-      <button class="restart" ${restartDisabled} onclick="doAction('${c.id}','restart',this)">⟳ 重启</button>
+  return `<div class="container-row" id="card-${c.id}">
+    <span class="row-status ${state}"></span>
+    <span class="row-name" title="${escHtml(c.name)}">${escHtml(c.name)}</span>
+    <span class="row-image" title="${escHtml(c.image || '')}">${escHtml(c.image || '-')}</span>
+    <div class="row-ports">${portsHtml || '<span style="color:var(--text-dim);font-size:11px">无端口</span>'}</div>
+    <div class="row-stats">${statsHtml}</div>
+    <div class="row-actions">
+      <button class="start" ${startDisabled} onclick="doAction('${c.id}','start',this)">▶</button>
+      <button class="stop" ${stopDisabled} onclick="doAction('${c.id}','stop',this)">⏹</button>
+      <button class="restart" ${restartDisabled} onclick="doAction('${c.id}','restart',this)">⟳</button>
     </div>
   </div>`;
 }
