@@ -409,6 +409,88 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 
 @keyframes spin{to{transform:rotate(360deg);}}
 @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.5;}}
+
+/* ===== DETAIL PANEL ===== */
+.detail-overlay {
+  display:none; position:fixed; top:0; left:0; right:0; bottom:0;
+  background:rgba(0,0,0,0.5); z-index:300; backdrop-filter:blur(4px);
+  justify-content:center; align-items:center;
+}
+.detail-overlay.show { display:flex; }
+.detail-panel {
+  background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+  box-shadow:0 8px 32px var(--shadow); padding:24px 28px; min-width:480px; max-width:640px;
+  max-height:80vh; overflow-y:auto; animation:fadeIn 0.2s ease;
+}
+.detail-panel .close-btn {
+  float:right; cursor:pointer; font-size:20px; color:var(--text-dim);
+  transition:color var(--transition); line-height:1;
+}
+.detail-panel .close-btn:hover { color:var(--text); }
+.detail-panel .detail-header {
+  display:flex; align-items:center; gap:10px; margin-bottom:16px;
+}
+.detail-panel .detail-header .status-dot {
+  width:10px; height:10px; border-radius:50%; flex-shrink:0;
+}
+.detail-panel .detail-header .status-dot.running { background:var(--green); box-shadow:0 0 8px var(--green); }
+.detail-panel .detail-header .status-dot.exited { background:var(--red); }
+.detail-panel .detail-header .status-dot.paused { background:var(--yellow); }
+.detail-panel .detail-header .status-dot.created { background:var(--accent); }
+.detail-panel .detail-header h2 {
+  font-size:18px; font-weight:700; color:var(--text-bright); flex:1;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.detail-panel .detail-section {
+  margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid var(--border);
+}
+.detail-panel .detail-section:last-child { border-bottom:none; margin-bottom:0; padding-bottom:0; }
+.detail-panel .detail-label {
+  font-size:11px; color:var(--text-dim); font-weight:600; text-transform:uppercase;
+  letter-spacing:0.5px; margin-bottom:6px;
+}
+.detail-panel .detail-value {
+  font-size:13px; color:var(--text); line-height:1.6;
+  word-break:break-all;
+}
+.detail-panel .detail-value.mono {
+  font-family:'SF Mono','Cascadia Code','Consolas',monospace;
+  font-size:12px; background:var(--bg2); padding:8px 12px; border-radius:var(--radius-xs);
+  border:1px solid var(--border-light);
+}
+.detail-panel .detail-stats {
+  display:grid; grid-template-columns:repeat(3,1fr); gap:10px;
+}
+.detail-panel .detail-stat {
+  background:var(--bg2); border:1px solid var(--border-light); border-radius:var(--radius-sm);
+  padding:10px 12px; text-align:center;
+}
+.detail-panel .detail-stat .stat-val { font-size:18px; font-weight:700; color:var(--text-bright); }
+.detail-panel .detail-stat .stat-label { font-size:10px; color:var(--text-dim); margin-top:2px; }
+.detail-panel .detail-ports {
+  display:flex; flex-wrap:wrap; gap:5px;
+}
+.detail-panel .detail-port {
+  font-size:11px; font-family:'SF Mono','Cascadia Code',monospace;
+  padding:3px 8px; background:rgba(88,166,255,0.08); color:var(--accent);
+  border-radius:3px; border:1px solid rgba(88,166,255,0.15);
+}
+.detail-panel .detail-actions {
+  display:flex; gap:8px; margin-top:16px; padding-top:16px; border-top:1px solid var(--border);
+}
+.detail-panel .detail-actions button {
+  flex:1; padding:9px 16px; border-radius:var(--radius-sm); cursor:pointer;
+  font-size:13px; font-weight:600; border:1px solid var(--border);
+  background:transparent; color:var(--text); transition:all var(--transition);
+}
+.detail-panel .detail-actions button:hover { background:var(--card-hover); }
+.detail-panel .detail-actions button:disabled { opacity:0.3; pointer-events:none; }
+.detail-panel .detail-actions .btn-start { border-color:var(--green-dim); color:var(--green); }
+.detail-panel .detail-actions .btn-start:hover:not(:disabled) { background:rgba(63,185,80,0.1); }
+.detail-panel .detail-actions .btn-stop { border-color:var(--red-dim); color:var(--red); }
+.detail-panel .detail-actions .btn-stop:hover:not(:disabled) { background:rgba(248,81,73,0.1); }
+.detail-panel .detail-actions .btn-restart { border-color:var(--yellow-dim); color:var(--yellow); }
+.detail-panel .detail-actions .btn-restart:hover:not(:disabled) { background:rgba(210,153,34,0.1); }
 </style>
 </head>
 <body>
@@ -430,11 +512,6 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 <div id="errorBanner"></div>
 
 <div class="toolbar">
-  <div class="search-box">
-    <span class="search-icon">🔍</span>
-    <input type="text" id="searchInput" placeholder="搜索容器名称..." oninput="onSearch()">
-    <span class="clear-btn" id="clearBtn" onclick="clearSearch()">✕</span>
-  </div>
   <div class="category-bar">
     <div class="cat-tab active" data-cat="all" onclick="setCategory('all')">📦 全部 <span class="count" id="count-all">0</span></div>
     <div class="cat-tab" data-cat="running" onclick="setCategory('running')">🟢 使用中 <span class="count" id="count-running">0</span></div>
@@ -453,8 +530,19 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
     </div>
   </div>
   <div class="content-area">
+    <!-- 搜索框在容器列表上方 -->
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="searchInput" placeholder="搜索容器名称 / 镜像..." oninput="onSearch()">
+      <span class="clear-btn" id="clearBtn" onclick="clearSearch()">✕</span>
+    </div>
     <div id="sectionsContainer"></div>
   </div>
+</div>
+
+<!-- 容器详情大胶囊 -->
+<div class="detail-overlay" id="detailOverlay" onclick="closeDetail(event)">
+  <div class="detail-panel" id="detailPanel"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -602,21 +690,76 @@ function renderRow(c, i) {
   const isRunning = state==='running', isStopped = state==='exited'||state==='dead', isCreated = state==='created';
   const portsHtml = (c.ports||[]).filter(p=>p.host_port).map(p=>`<span class="row-port">${p.host_port}→${p.container_port}/${p.type}</span>`).join('');
   const statsHtml = (c.stats&&isRunning) ? `<span>CPU ${c.stats.cpu_percent||0}%</span><span>MEM ${c.stats.memory_usage_mb||0}/${c.stats.memory_limit_mb||0}MB</span>` : '<span>-</span>';
-  return `<div class="container-row" id="card-${c.id}">
+  return `<div class="container-row" id="card-${c.id}" onclick="showDetail(allContainers.find(x=>x.id==='${c.id}'))">
     <span class="row-status ${state}"></span>
     <span class="row-name" title="${esc(c.name)}">${esc(c.name)}</span>
     <span class="row-image" title="${esc(c.image||'')}">${esc(c.image||'-')}</span>
     <div class="row-ports">${portsHtml||'<span style="color:var(--text-dim);font-size:10px">无端口</span>'}</div>
     <div class="row-stats">${statsHtml}</div>
     <div class="row-actions">
-      <button class="start" ${isRunning?'disabled':''} onclick="doAction('${c.id}','start',this)">▶</button>
-      <button class="stop" ${(isStopped||isCreated)?'disabled':''} onclick="doAction('${c.id}','stop',this)">⏹</button>
-      <button class="restart" ${(isStopped||isCreated)?'disabled':''} onclick="doAction('${c.id}','restart',this)">⟳</button>
+      <button class="start" ${isRunning?'disabled':''} onclick="event.stopPropagation();doAction('${c.id}','start',this)">▶</button>
+      <button class="stop" ${(isStopped||isCreated)?'disabled':''} onclick="event.stopPropagation();doAction('${c.id}','stop',this)">⏹</button>
+      <button class="restart" ${(isStopped||isCreated)?'disabled':''} onclick="event.stopPropagation();doAction('${c.id}','restart',this)">⟳</button>
     </div>
   </div>`;
 }
 
 function esc(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+// ===== DETAIL PANEL =====
+function showDetail(c) {
+  const state = c.state||'unknown';
+  const isRunning = state==='running', isStopped = state==='exited'||state==='dead', isCreated = state==='created';
+  const portsHtml = (c.ports||[]).filter(p=>p.host_port).map(p=>`<span class="detail-port">${p.host_port}→${p.container_port}/${p.type}</span>`).join('') || '<span style="color:var(--text-dim)">无端口映射</span>';
+  const cpu = c.stats ? (c.stats.cpu_percent||0)+'%' : '-';
+  const memUse = c.stats ? (c.stats.memory_usage_mb||0)+'MB' : '-';
+  const memLimit = c.stats ? (c.stats.memory_limit_mb||0)+'MB' : '-';
+  const memPct = c.stats ? (c.stats.memory_percent||0)+'%' : '-';
+  const netRx = c.stats ? formatBytes(c.stats.network_rx||0) : '-';
+  const netTx = c.stats ? formatBytes(c.stats.network_tx||0) : '-';
+
+  document.getElementById('detailPanel').innerHTML = `
+    <span class="close-btn" onclick="closeDetail()">✕</span>
+    <div class="detail-header">
+      <span class="status-dot ${state}"></span>
+      <h2>${esc(c.name)}</h2>
+    </div>
+    <div class="detail-section">
+      <div class="detail-label">基本信息</div>
+      <div class="detail-value"><b>ID:</b> ${esc(c.id)} &nbsp; <b>状态:</b> ${esc(c.status||state)}</div>
+      <div class="detail-value mono" style="margin-top:6px">${esc(c.image||'-')}</div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-label">资源使用</div>
+      <div class="detail-stats">
+        <div class="detail-stat"><div class="stat-val">${cpu}</div><div class="stat-label">CPU</div></div>
+        <div class="detail-stat"><div class="stat-val">${memUse}</div><div class="stat-label">内存 / ${memLimit}</div></div>
+        <div class="detail-stat"><div class="stat-val">${memPct}</div><div class="stat-label">内存占用</div></div>
+      </div>
+      <div class="detail-value" style="margin-top:8px;font-size:12px;color:var(--text-dim)">网络: ↓${netRx} ↑${netTx}</div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-label">端口映射</div>
+      <div class="detail-ports">${portsHtml}</div>
+    </div>
+    <div class="detail-actions">
+      <button class="btn-start" ${isRunning?'disabled':''} onclick="doAction('${c.id}','start',this);closeDetail()">▶ 启动</button>
+      <button class="btn-stop" ${(isStopped||isCreated)?'disabled':''} onclick="doAction('${c.id}','stop',this);closeDetail()">⏹ 停止</button>
+      <button class="btn-restart" ${(isStopped||isCreated)?'disabled':''} onclick="doAction('${c.id}','restart',this);closeDetail()">⟳ 重启</button>
+    </div>
+  `;
+  document.getElementById('detailOverlay').classList.add('show');
+}
+function closeDetail(e) {
+  if (!e || e.target===document.getElementById('detailOverlay') || e.target.classList.contains('close-btn'))
+    document.getElementById('detailOverlay').classList.remove('show');
+}
+function formatBytes(b) {
+  if (b<1024) return b+'B';
+  if (b<1048576) return (b/1024).toFixed(1)+'KB';
+  if (b<1073741824) return (b/1048576).toFixed(1)+'MB';
+  return (b/1073741824).toFixed(1)+'GB';
+}
 
 async function doAction(id, action, btn) {
   const labels={start:'启动',stop:'停止',restart:'重启'};
