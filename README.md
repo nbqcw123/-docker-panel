@@ -1,6 +1,8 @@
-# 🐳 Docker 管理面板
+# 🐳 Docker 管理面板 v1.2.0
 
 轻量级 Docker 容器管理 Web 面板，支持 **群晖 Synology**、**飞牛 fnOS** 等 NAS 系统。
+
+![Docker Panel Screenshot](screenshot.png)
 
 ## 功能
 

@@ -7,6 +7,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+VERSION = "1.2.0"
+
 app = FastAPI(title="Docker Panel")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -258,9 +260,15 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
   padding:14px 24px;margin-bottom:16px;
   background:var(--card);border-radius:var(--radius);border:1px solid var(--border);
   box-shadow:0 2px 8px var(--shadow);position:sticky;top:0;z-index:100;backdrop-filter:blur(12px);
+.header {display:flex;align-items:center;gap:12px;padding:12px 20px;margin-bottom:14px;background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:0 2px 8px var(--shadow);position:sticky;top:0;z-index:100;backdrop-filter:blur(12px);}
+.header-left {display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.header h1 {font-size:17px;font-weight:700;display:flex;align-items:center;gap:6px;white-space:nowrap;margin:0;}
+.header h1 .icon {font-size:20px;}
+.hdr-ver {
+  font-size:11px;font-weight:600;color:var(--text-dim);
+  background:var(--bg2);padding:2px 8px;border-radius:10px;
+  border:1px solid var(--border-light);letter-spacing:0.3px;
 }
-.header h1 {font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px;white-space:nowrap;}
-.header h1 .icon {font-size:22px;}
 
 /* Status pills in header */
 .hdr-stats {display:flex;gap:10px;flex:1;min-width:0;}
@@ -496,7 +504,10 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 <body>
 
 <div class="header">
-  <h1><span class="icon">🐳</span> Docker 管理面板</h1>
+  <div class="header-left">
+    <h1><span class="icon">🐳</span> Docker Panel</h1>
+    <span class="hdr-ver">v1.2.0</span>
+  </div>
   <div class="hdr-stats" id="hdrStats"></div>
   <div class="header-right">
     <div class="theme-switcher">
