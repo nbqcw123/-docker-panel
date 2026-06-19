@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Docker Management Panel - Backend (FastAPI)"""
-import json, subprocess, asyncio, re, os, socket, ssl
+import json, subprocess, asyncio, re, os, socket, ssl, urllib.request, urllib.error, shutil, tempfile
 from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -8,6 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 VERSION = "1.3.0"
+GITHUB_REPO = "nbqcw123/docker-panel"
+GITHUB_RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_REPO}/master"
 
 app = FastAPI(title="Docker Panel")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -34,6 +36,111 @@ def _save_custom_meta(data):
             json.dump(data, f, ensure_ascii=False, indent=2)
     except:
         pass
+
+def _get_remote_version():
+    """Fetch latest version info from GitHub"""
+    try:
+        url = f"{GITHUB_RAW_BASE}/version.json"
+        req = urllib.request.Request(url, headers={"Cache-Control": "no-cache"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+            return data
+    except Exception as e:
+        return None
+
+def _version_tuple(v):
+    """Parse version string to tuple for comparison"""
+    try:
+        return tuple(int(x) for x in v.strip().split("."))
+    except:
+        return (0,)
+
+@app.get("/api/version")
+async def get_version():
+    """Get local and remote version info"""
+    remote = _get_remote_version()
+    local_version = VERSION
+    remote_version = remote.get("version", "") if remote else ""
+    has_update = False
+    if remote_version:
+        has_update = _version_tuple(remote_version) > _version_tuple(local_version)
+    return {
+        "local": local_version,
+        "remote": remote_version,
+        "has_update": has_update,
+        "changelog": remote.get("changelog", []) if remote else [],
+        "date": remote.get("date", "") if remote else "",
+        "repo": GITHUB_REPO
+    }
+
+class UpdateRequest(BaseModel):
+    target_version: str = ""
+
+@app.post("/api/update")
+async def perform_update(req: UpdateRequest):
+    """Download latest main.py from GitHub and replace local file"""
+    try:
+        # Download latest main.py
+        url = f"{GITHUB_RAW_BASE}/main.py"
+        req_dl = urllib.request.Request(url, headers={"Cache-Control": "no-cache"})
+        with urllib.request.urlopen(req_dl, timeout=30) as resp:
+            new_content = resp.read()
+        
+        # Verify it's valid Python
+        try:
+            compile(new_content, "<string>", "exec")
+        except SyntaxError as e:
+            raise HTTPException(500, f"Downloaded file has syntax error: {e}")
+        
+        # Backup current file
+        main_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py")
+        backup_path = main_path + ".bak"
+        shutil.copy2(main_path, backup_path)
+        
+        # Write new file
+        with open(main_path, "wb") as f:
+            f.write(new_content)
+        
+        # Also download version.json
+        try:
+            url_v = f"{GITHUB_RAW_BASE}/version.json"
+            req_v = urllib.request.Request(url_v, headers={"Cache-Control": "no-cache"})
+            with urllib.request.urlopen(req_v, timeout=10) as resp:
+                v_content = resp.read()
+            v_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "version.json")
+            with open(v_path, "wb") as f:
+                f.write(v_content)
+        except:
+            pass  # version.json is optional
+        
+        # Clear pycache
+        pycache = os.path.join(os.path.dirname(os.path.abspath(__file__)), "__pycache__")
+        if os.path.exists(pycache):
+            shutil.rmtree(pycache)
+        
+        return {"success": True, "message": "更新成功，请重启面板服务以生效", "restarted": False}
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Restore backup if exists
+        try:
+            if os.path.exists(backup_path):
+                shutil.copy2(backup_path, main_path)
+        except:
+            pass
+        raise HTTPException(500, f"更新失败: {str(e)}")
+
+@app.post("/api/restart")
+async def restart_service():
+    """Restart the panel service"""
+    try:
+        # Write a restart flag file
+        flag_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".restart_flag")
+        with open(flag_path, "w") as f:
+            f.write(str(os.getpid()))
+        return {"success": True, "message": "重启信号已发送"}
+    except Exception as e:
+        raise HTTPException(500, f"重启失败: {str(e)}")
 
 def _detect_docker_bin() -> str:
     for c in ["docker", "/usr/bin/docker", "/usr/local/bin/docker", "/volume1/@appstore/ContainerManager/usr/bin/docker"]:
@@ -578,6 +685,86 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .detail-panel .detail-actions .btn-stop:hover:not(:disabled) { background:rgba(248,81,73,0.1); }
 .detail-panel .detail-actions .btn-restart { border-color:var(--yellow-dim); color:var(--yellow); }
 .detail-panel .detail-actions .btn-restart:hover:not(:disabled) { background:rgba(210,153,34,0.1); }
+
+/* ===== UPDATE MODAL ===== */
+.hdr-update-btn {
+  font-size:11px;font-weight:600;padding:3px 10px;border-radius:10px;
+  border:1px solid var(--yellow-dim);background:rgba(210,153,34,0.1);
+  color:var(--yellow);cursor:pointer;transition:all var(--transition);
+  animation:updatePulse 2s ease-in-out infinite;
+}
+.hdr-update-btn:hover { background:rgba(210,153,34,0.25); }
+@keyframes updatePulse {
+  0%,100% { box-shadow:0 0 0 0 rgba(210,153,34,0.3); }
+  50% { box-shadow:0 0 8px 2px rgba(210,153,34,0.2); }
+}
+.update-overlay {
+  display:none;position:fixed;top:0;left:0;right:0;bottom:0;
+  background:rgba(0,0,0,0.5);z-index:400;backdrop-filter:blur(4px);
+  justify-content:center;align-items:center;
+}
+.update-overlay.show { display:flex; }
+.update-panel {
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:0 8px 32px var(--shadow);padding:28px 32px;min-width:420px;max-width:520px;
+  max-height:70vh;overflow-y:auto;animation:fadeIn 0.2s ease;
+}
+.update-panel .update-header {
+  display:flex;align-items:center;gap:10px;margin-bottom:16px;
+}
+.update-panel .update-header h2 { font-size:18px;font-weight:700;color:var(--text-bright);flex:1; }
+.update-panel .update-header .close-btn {
+  cursor:pointer;font-size:20px;color:var(--text-dim);transition:color var(--transition);line-height:1;
+}
+.update-panel .update-header .close-btn:hover { color:var(--text); }
+.update-panel .update-meta {
+  font-size:12px;color:var(--text-dim);margin-bottom:12px;
+  padding-bottom:12px;border-bottom:1px solid var(--border);
+}
+.update-panel .update-meta span { margin-right:12px; }
+.update-panel .update-changelog {
+  margin-bottom:16px;
+}
+.update-panel .update-changelog .cl-title {
+  font-size:12px;font-weight:600;color:var(--text-dim);text-transform:uppercase;
+  letter-spacing:0.5px;margin-bottom:8px;
+}
+.update-panel .update-changelog ul {
+  list-style:none;padding:0;margin:0;
+}
+.update-panel .update-changelog ul li {
+  font-size:13px;color:var(--text);padding:4px 0 4px 16px;position:relative;
+}
+.update-panel .update-changelog ul li::before {
+  content:"•";color:var(--accent);position:absolute;left:0;font-size:16px;line-height:1.2;
+}
+.update-panel .update-actions {
+  display:flex;gap:10px;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);
+}
+.update-panel .update-actions button {
+  flex:1;padding:10px 16px;border-radius:var(--radius-sm);cursor:pointer;
+  font-size:13px;font-weight:600;border:1px solid var(--border);
+  background:transparent;color:var(--text);transition:all var(--transition);
+}
+.update-panel .update-actions button:hover { background:var(--card-hover); }
+.update-panel .update-actions button:disabled { opacity:0.5;pointer-events:none; }
+.update-panel .update-actions .btn-update {
+  border-color:var(--green-dim);color:var(--green);background:rgba(63,185,80,0.08);
+}
+.update-panel .update-actions .btn-update:hover:not(:disabled) { background:rgba(63,185,80,0.15); }
+.update-panel .update-progress {
+  display:none;margin-top:12px;padding:10px 14px;background:var(--bg2);
+  border-radius:var(--radius-sm);font-size:12px;color:var(--text-dim);
+  border:1px solid var(--border);
+}
+.update-panel .update-progress.show { display:block; }
+.update-panel .update-progress .progress-bar {
+  width:100%;height:4px;background:var(--border);border-radius:2px;
+  margin-top:6px;overflow:hidden;
+}
+.update-panel .update-progress .progress-fill {
+  height:100%;background:var(--green);border-radius:2px;transition:width 0.3s ease;
+}
 </style>
 </head>
 <body>
@@ -585,7 +772,8 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 <div class="header">
   <div class="header-left">
     <h1><span class="icon">🐳</span> Docker Panel</h1>
-    <span class="hdr-ver">v1.3.0</span>
+    <span class="hdr-ver" id="hdrVer">v1.3.0</span>
+    <button class="hdr-update-btn" id="hdrUpdateBtn" onclick="showUpdateModal()" style="display:none" title="有新版本可用">⬆ 版本更新</button>
   </div>
   <div class="hdr-stats" id="hdrStats"></div>
   <div class="header-right">
@@ -924,9 +1112,120 @@ function showToast(msg,type) {
   setTimeout(()=>t.className='toast',3000);
 }
 
+// ===== UPDATE MODAL =====
+let updateInfo = null;
+
+function checkVersion() {
+  fetch(API+'/api/version').then(r=>r.json()).then(data=>{
+    updateInfo = data;
+    const btn = document.getElementById('hdrUpdateBtn');
+    if (data.has_update) {
+      btn.style.display = 'inline-flex';
+      btn.textContent = '⬆ v' + data.remote;
+    } else {
+      btn.style.display = 'none';
+    }
+  }).catch(()=>{});
+}
+
+function showUpdateModal() {
+  if (!updateInfo || !updateInfo.has_update) return;
+  const overlay = document.getElementById('updateOverlay');
+  document.getElementById('updateLocalVer').textContent = updateInfo.local;
+  document.getElementById('updateRemoteVer').textContent = updateInfo.remote;
+  document.getElementById('updateDate').textContent = updateInfo.date || '';
+  const clUl = document.getElementById('updateChangelog');
+  clUl.innerHTML = '';
+  if (updateInfo.changelog && updateInfo.changelog.length) {
+    updateInfo.changelog.forEach(item=>{
+      const li = document.createElement('li');
+      li.textContent = item;
+      clUl.appendChild(li);
+    });
+  } else {
+    clUl.innerHTML = '<li>无更新说明</li>';
+  }
+  document.getElementById('updateProgress').classList.remove('show');
+  document.getElementById('updateProgress').innerHTML = '';
+  document.getElementById('btnUpdate').disabled = false;
+  document.getElementById('btnUpdate').textContent = '立即更新';
+  overlay.classList.add('show');
+}
+
+function closeUpdateModal() {
+  document.getElementById('updateOverlay').classList.remove('show');
+}
+
+function doUpdate() {
+  const btn = document.getElementById('btnUpdate');
+  const progress = document.getElementById('updateProgress');
+  btn.disabled = true;
+  btn.textContent = '更新中...';
+  progress.classList.add('show');
+  progress.innerHTML = '<div>⏳ 正在下载最新版本...</div><div class="progress-bar"><div class="progress-fill" id="updateProgressFill" style="width:30%"></div></div>';
+  
+  fetch(API+'/api/update', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({target_version: updateInfo.remote})})
+    .then(r=>r.json())
+    .then(data=>{
+      document.getElementById('updateProgressFill').style.width = '100%';
+      progress.innerHTML = '<div style="color:var(--green)">✅ ' + data.message + '</div>';
+      btn.textContent = '重启面板';
+      btn.disabled = false;
+      btn.onclick = doRestart;
+    })
+    .catch(e=>{
+      progress.innerHTML = '<div style="color:var(--red)">❌ 更新失败: ' + e.message + '</div>';
+      btn.textContent = '重试';
+      btn.disabled = false;
+    });
+}
+
+function doRestart() {
+  const progress = document.getElementById('updateProgress');
+  progress.innerHTML = '<div style="color:var(--yellow)">🔄 正在重启面板服务...</div>';
+  fetch(API+'/api/restart', {method:'POST'}).then(()=>{
+    setTimeout(()=>{
+      progress.innerHTML = '<div style="color:var(--green)">✅ 面板正在重启，3秒后自动刷新...</div>';
+      setTimeout(()=>location.reload(), 3000);
+    }, 2000);
+  }).catch(e=>{
+    progress.innerHTML = '<div style="color:var(--red)">❌ 重启失败: ' + e.message + '</div>';
+  });
+}
+
+// 初始检测版本
+setTimeout(checkVersion, 1000);
+// 每5分钟检测一次
+setInterval(checkVersion, 300000);
+
 loadData();
 setInterval(loadData,30000);
 </script>
+
+<!-- 更新弹窗 -->
+<div class="update-overlay" id="updateOverlay" onclick="if(event.target===this)closeUpdateModal()">
+  <div class="update-panel">
+    <div class="update-header">
+      <h2>🔄 版本更新</h2>
+      <span class="close-btn" onclick="closeUpdateModal()">✕</span>
+    </div>
+    <div class="update-meta">
+      <span>当前版本: <b id="updateLocalVer">-</b></span>
+      <span>最新版本: <b id="updateRemoteVer" style="color:var(--green)">-</b></span>
+      <span id="updateDate"></span>
+    </div>
+    <div class="update-changelog">
+      <div class="cl-title">更新说明</div>
+      <ul id="updateChangelog"></ul>
+    </div>
+    <div class="update-actions">
+      <button class="btn-update" id="btnUpdate" onclick="doUpdate()">立即更新</button>
+      <button onclick="closeUpdateModal()">稍后再说</button>
+    </div>
+    <div class="update-progress" id="updateProgress"></div>
+  </div>
+</div>
+
 </body>
 </html>
 """
