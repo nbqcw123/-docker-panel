@@ -7,12 +7,33 @@ from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 app = FastAPI(title="Docker Panel")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 DOCKER_SOCKET = "/var/run/docker.sock"
+
+# Custom names and descriptions storage
+CUSTOM_DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "container_meta.json")
+
+def _load_custom_meta():
+    """Load custom names and descriptions from local JSON file"""
+    try:
+        if os.path.exists(CUSTOM_DATA_FILE):
+            with open(CUSTOM_DATA_FILE, "r") as f:
+                return json.load(f)
+    except:
+        pass
+    return {"names": {}, "descriptions": {}}
+
+def _save_custom_meta(data):
+    """Save custom names and descriptions to local JSON file"""
+    try:
+        with open(CUSTOM_DATA_FILE, "w") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except:
+        pass
 
 def _detect_docker_bin() -> str:
     for c in ["docker", "/usr/bin/docker", "/usr/local/bin/docker", "/volume1/@appstore/ContainerManager/usr/bin/docker"]:
@@ -155,10 +176,38 @@ async def list_containers():
     loop = asyncio.get_event_loop()
     raw = await loop.run_in_executor(None, lambda: docker_api("GET", "/containers/json?all=true"))
     if isinstance(raw, dict) and "error" in raw: raise HTTPException(500, raw["error"])
+    meta = _load_custom_meta()
     cs = []
     for c in raw:
         ps = [{"container_port":p.get("PrivatePort"),"host_port":p.get("PublicPort"),"host_ip":p.get("IP","0.0.0.0"),"type":p.get("Type","tcp")} for p in c.get("Ports",[])]
-        cs.append({"id":c.get("Id","")[:12],"name":c.get("Names",[""])[0].lstrip("/"),"image":c.get("Image",""),"status":c.get("Status",""),"state":c.get("State",""),"created":c.get("Created",0),"ports":ps})
+        cid = c.get("Id", "")
+        short_id = cid[:12]
+        # Get version from labels
+        labels = c.get("Labels", {}) or {}
+        version = labels.get("org.opencontainers.image.version", "")
+        if not version:
+            # Try to extract from image tag
+            img = c.get("Image", "")
+            if ":" in img and "@" not in img:
+                tag = img.split(":")[-1]
+                if tag and tag != "latest":
+                    version = tag
+        # Custom name
+        custom_name = meta.get("names", {}).get(cid, "")
+        description = meta.get("descriptions", {}).get(cid, "")
+        cs.append({
+            "id": short_id,
+            "full_id": cid,
+            "name": c.get("Names",[""])[0].lstrip("/"),
+            "custom_name": custom_name,
+            "description": description,
+            "image": c.get("Image",""),
+            "version": version,
+            "status": c.get("Status",""),
+            "state": c.get("State",""),
+            "created": c.get("Created",0),
+            "ports": ps
+        })
     return {"containers": cs, "count": len(cs)}
 
 @app.get("/api/container/{cid}/stats")
@@ -199,6 +248,39 @@ async def system_info():
 
 class ActionRequest(BaseModel):
     action: str
+
+class CustomNameRequest(BaseModel):
+    name: str
+
+class DescriptionRequest(BaseModel):
+    description: str
+
+@app.post("/api/container/{cid}/custom-name")
+async def set_custom_name(cid: str, req: CustomNameRequest):
+    meta = _load_custom_meta()
+    # Find full ID from short ID
+    loop = asyncio.get_event_loop()
+    raw = await loop.run_in_executor(None, lambda: docker_api("GET", "/containers/json?all=true"))
+    if isinstance(raw, list):
+        for c in raw:
+            if c.get("Id", "").startswith(cid):
+                meta["names"][c["Id"]] = req.name
+                _save_custom_meta(meta)
+                return {"success": True, "cid": cid, "name": req.name}
+    raise HTTPException(404, "Container not found")
+
+@app.post("/api/container/{cid}/description")
+async def set_description(cid: str, req: DescriptionRequest):
+    meta = _load_custom_meta()
+    loop = asyncio.get_event_loop()
+    raw = await loop.run_in_executor(None, lambda: docker_api("GET", "/containers/json?all=true"))
+    if isinstance(raw, list):
+        for c in raw:
+            if c.get("Id", "").startswith(cid):
+                meta["descriptions"][c["Id"]] = req.description
+                _save_custom_meta(meta)
+                return {"success": True, "cid": cid, "description": req.description}
+    raise HTTPException(404, "Container not found")
 
 @app.post("/api/container/{cid}/action")
 async def container_action(cid: str, req: ActionRequest):
@@ -361,6 +443,8 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .container-row .row-status.created {background:var(--accent);}
 .container-row .row-name {font-size:13px;font-weight:600;min-width:120px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-bright);}
 .container-row .row-image {font-size:10px;color:var(--text-dim);font-family:'SF Mono','Cascadia Code',monospace;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.container-row .row-version {font-size:10px;font-family:'SF Mono','Cascadia Code',monospace;padding:2px 6px;background:rgba(192,132,252,0.1);color:var(--accent);border-radius:3px;border:1px solid rgba(192,132,252,0.2);white-space:nowrap;flex-shrink:0;}
+.container-row .row-desc {font-size:11px;color:var(--text-dim);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0;}
 .container-row .row-ports {display:flex;gap:3px;flex-wrap:wrap;flex:1;min-width:0;}
 .container-row .row-port {font-size:10px;font-family:'SF Mono','Cascadia Code',monospace;padding:2px 5px;background:rgba(88,166,255,0.08);color:var(--accent);border-radius:3px;border:1px solid rgba(88,166,255,0.15);}
 .container-row .row-stats {display:flex;gap:10px;font-size:10px;color:var(--text-dim);min-width:110px;justify-content:flex-end;}
@@ -696,10 +780,18 @@ function renderRow(c, i) {
   const isRunning = state==='running', isStopped = state==='exited'||state==='dead', isCreated = state==='created';
   const portsHtml = (c.ports||[]).filter(p=>p.host_port).map(p=>`<span class="row-port">${p.host_port}→${p.container_port}/${p.type}</span>`).join('');
   const statsHtml = (c.stats&&isRunning) ? `<span>CPU ${c.stats.cpu_percent||0}%</span><span>MEM ${c.stats.memory_usage_mb||0}/${c.stats.memory_limit_mb||0}MB</span>` : '<span>-</span>';
+  // Display name: custom name + original name in brackets
+  const displayName = c.custom_name ? `<span class="row-name" title="${esc(c.name)}">${esc(c.custom_name)} <span style="color:var(--text-dim);font-size:11px;font-weight:400">(${esc(c.name)})</span></span>` : `<span class="row-name" title="${esc(c.name)}">${esc(c.name)}</span>`;
+  // Version badge
+  const versionHtml = c.version ? `<span class="row-version" title="版本">${esc(c.version)}</span>` : '';
+  // Description
+  const descHtml = c.description ? `<span class="row-desc" title="${esc(c.description)}">📝 ${esc(c.description)}</span>` : '';
   return `<div class="container-row" id="card-${c.id}" onclick="showDetail(allContainers.find(x=>x.id==='${c.id}'))">
     <span class="row-status ${state}"></span>
-    <span class="row-name" title="${esc(c.name)}">${esc(c.name)}</span>
+    ${displayName}
+    ${versionHtml}
     <span class="row-image" title="${esc(c.image||'')}">${esc(c.image||'-')}</span>
+    ${descHtml}
     <div class="row-ports">${portsHtml||'<span style="color:var(--text-dim);font-size:10px">无端口</span>'}</div>
     <div class="row-stats">${statsHtml}</div>
     <div class="row-actions">
@@ -723,17 +815,36 @@ function showDetail(c) {
   const memPct = c.stats ? (c.stats.memory_percent||0)+'%' : '-';
   const netRx = c.stats ? formatBytes(c.stats.network_rx||0) : '-';
   const netTx = c.stats ? formatBytes(c.stats.network_tx||0) : '-';
+  const versionHtml = c.version ? `<div class="detail-value" style="margin-top:4px"><b>版本:</b> ${esc(c.version)}</div>` : '';
+  const customNameVal = c.custom_name || '';
+  const descVal = c.description || '';
 
   document.getElementById('detailPanel').innerHTML = `
     <span class="close-btn" onclick="closeDetail()">✕</span>
     <div class="detail-header">
       <span class="status-dot ${state}"></span>
-      <h2>${esc(c.name)}</h2>
+      <h2>${esc(c.custom_name || c.name)}</h2>
     </div>
     <div class="detail-section">
       <div class="detail-label">基本信息</div>
       <div class="detail-value"><b>ID:</b> ${esc(c.id)} &nbsp; <b>状态:</b> ${esc(c.status||state)}</div>
       <div class="detail-value mono" style="margin-top:6px">${esc(c.image||'-')}</div>
+      ${versionHtml}
+      <div class="detail-value" style="margin-top:4px;font-size:12px;color:var(--text-dim)"><b>原名:</b> ${esc(c.name)}</div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-label">自定义名称</div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input type="text" id="customNameInput" value="${esc(customNameVal)}" placeholder="输入自定义名称..." style="flex:1;padding:7px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;outline:none" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+        <button onclick="saveCustomName('${c.id}')" style="padding:7px 14px;background:var(--accent-dim);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">保存</button>
+      </div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-label">容器用途</div>
+      <div style="display:flex;gap:6px;align-items:flex-start">
+        <textarea id="descInput" placeholder="输入容器用途描述..." rows="3" style="flex:1;padding:7px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;outline:none;resize:vertical;font-family:inherit" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">${esc(descVal)}</textarea>
+      </div>
+      <button onclick="saveDescription('${c.id}')" style="margin-top:6px;padding:7px 14px;background:var(--accent-dim);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">保存用途</button>
     </div>
     <div class="detail-section">
       <div class="detail-label">资源使用</div>
@@ -778,6 +889,32 @@ async function doAction(id, action, btn) {
   } catch(e) {
     showToast(labels[action]+' 失败: '+e.message,'error');
     btn.classList.remove('loading'); btn.disabled=false;
+  }
+}
+
+async function saveCustomName(id) {
+  const input = document.getElementById('customNameInput');
+  const name = input.value.trim();
+  try {
+    const r = await fetch(API+`/api/container/${id}/custom-name`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+    if (!r.ok) { const e=await r.json(); throw new Error(e.detail||'保存失败'); }
+    showToast('自定义名称已保存','success');
+    setTimeout(loadData,500);
+  } catch(e) {
+    showToast('保存失败: '+e.message,'error');
+  }
+}
+
+async function saveDescription(id) {
+  const input = document.getElementById('descInput');
+  const description = input.value.trim();
+  try {
+    const r = await fetch(API+`/api/container/${id}/description`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({description})});
+    if (!r.ok) { const e=await r.json(); throw new Error(e.detail||'保存失败'); }
+    showToast('容器用途已保存','success');
+    setTimeout(loadData,500);
+  } catch(e) {
+    showToast('保存失败: '+e.message,'error');
   }
 }
 
