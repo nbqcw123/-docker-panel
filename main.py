@@ -585,7 +585,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 <div class="header">
   <div class="header-left">
     <h1><span class="icon">🐳</span> Docker Panel</h1>
-    <span class="hdr-ver">v1.2.0</span>
+    <span class="hdr-ver">v1.3.0</span>
   </div>
   <div class="hdr-stats" id="hdrStats"></div>
   <div class="header-right">
