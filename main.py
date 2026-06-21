@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-VERSION = "1.3.1"
+VERSION = "1.3.2"
 GITHUB_REPO = "nbqcw123/docker-panel"
 GITHUB_RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_REPO}/master"
 
@@ -334,6 +334,15 @@ async def container_stats(cid: str):
     ns = r.get("networks",{})
     return {"id":cid[:12],"cpu_percent":cpu,"memory_usage":mu,"memory_limit":ml,"memory_usage_mb":round(mu/1024/1024,1),"memory_limit_mb":round(ml/1024/1024,1),"memory_percent":mp,"network_rx":sum(n.get("rx_bytes",0) for n in ns.values()),"network_tx":sum(n.get("tx_bytes",0) for n in ns.values())}
 
+@app.get("/api/container/{cid}/disk")
+async def container_disk(cid: str):
+    loop = asyncio.get_event_loop()
+    r = await loop.run_in_executor(None, lambda: docker_api("GET", f"/containers/{cid}/json"))
+    if isinstance(r, dict) and "error" in r: raise HTTPException(500, r["error"])
+    size_rw = r.get("SizeRw", 0) or 0
+    size_root = r.get("SizeRootFs", 0) or 0
+    return {"id": cid[:12], "size_rw": size_rw, "size_root_fs": size_root}
+
 @app.get("/api/system")
 async def system_info():
     loop = asyncio.get_event_loop()
@@ -352,6 +361,134 @@ async def system_info():
         k = (p["host_port"],p["protocol"])
         if k not in seen: seen.add(k); up.append(p)
     return {"memory":get_system_memory(),"disk":get_disk_usage(),"ports":up,"ports_count":len(up)}
+
+
+def get_cpu_info():
+    """Get detailed CPU info and per-core usage"""
+    info = {"model": "", "cores": 0, "freq": "", "load_avg": [], "per_core": [], "processes": []}
+    try:
+        # CPU model and cores
+        r = subprocess.run(["cat", "/proc/cpuinfo"], capture_output=True, text=True, timeout=5)
+        model_found = False
+        for line in r.stdout.split("\n"):
+            if "model name" in line and not model_found:
+                info["model"] = line.split(":")[1].strip()
+                model_found = True
+        info["cores"] = r.stdout.count("processor\t:")
+    except:
+        pass
+    try:
+        # CPU freq
+        r = subprocess.run(["cat", "/proc/cpuinfo"], capture_output=True, text=True, timeout=5)
+        for line in r.stdout.split("\n"):
+            if "cpu MHz" in line:
+                mhz = float(line.split(":")[1].strip())
+                info["freq"] = f"{mhz:.0f} MHz"
+                break
+    except:
+        pass
+    try:
+        # Load average
+        r = subprocess.run(["cat", "/proc/loadavg"], capture_output=True, text=True, timeout=5)
+        parts = r.stdout.strip().split()
+        info["load_avg"] = [float(parts[0]), float(parts[1]), float(parts[2])]
+    except:
+        pass
+    try:
+        # Per-core usage via mpstat or /proc/stat
+        r = subprocess.run(
+            ["sh", "-c", "head -1 /proc/stat | tr -s ' ' '\n'"],
+            capture_output=True, text=True, timeout=5
+        )
+        # Get overall CPU stats
+        r2 = subprocess.run(["cat", "/proc/stat"], capture_output=True, text=True, timeout=5)
+        cpu_lines = [l for l in r2.stdout.split("\n") if l.startswith("cpu")]
+        for cl in cpu_lines[:9]:  # cpu + cpu0..cpu8
+            parts = cl.split()
+            if len(parts) >= 5:
+                name = parts[0]
+                user = int(parts[1])
+                nice = int(parts[2])
+                system = int(parts[3])
+                idle = int(parts[4])
+                total = user + nice + system + idle
+                usage = round((user + nice + system) / total * 100, 1) if total > 0 else 0
+                if name == "cpu":
+                    info["total_usage"] = usage
+                else:
+                    info["per_core"].append({"core": name, "usage": usage})
+    except:
+        pass
+    return info
+
+
+def get_network_info():
+    """Get network interfaces info and traffic"""
+    info = {"interfaces": [], "default_iface": "", "hostname": "", "ip": ""}
+    try:
+        info["hostname"] = socket.gethostname()
+    except:
+        pass
+    try:
+        # Default interface via ip route
+        r = subprocess.run(["ip", "route", "show", "default"], capture_output=True, text=True, timeout=5)
+        for line in r.stdout.split("\n"):
+            parts = line.split()
+            if "dev" in parts:
+                info["default_iface"] = parts[parts.index("dev") + 1]
+                break
+    except:
+        pass
+    try:
+        # IP address of default iface
+        r = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=5)
+        if r.stdout.strip():
+            info["ip"] = r.stdout.strip().split()[0]
+    except:
+        pass
+    try:
+        # Network interfaces stats
+        with open("/proc/net/dev", "r") as f:
+            lines = f.readlines()[2:]  # skip header
+        for line in lines:
+            parts = line.split()
+            if len(parts) < 10:
+                continue
+            iface = parts[0].rstrip(":")
+            if iface == "lo":
+                continue
+            rx_bytes = int(parts[1])
+            tx_bytes = int(parts[9])
+            info["interfaces"].append({
+                "name": iface,
+                "rx_bytes": rx_bytes,
+                "tx_bytes": tx_bytes,
+                "rx_human": _format_bytes(rx_bytes),
+                "tx_human": _format_bytes(tx_bytes),
+                "is_default": iface == info.get("default_iface", ""),
+            })
+    except:
+        pass
+    return info
+
+
+def _format_bytes(b):
+    if b < 1024: return f"{b} B"
+    if b < 1048576: return f"{b/1024:.1f} KB"
+    if b < 1073741824: return f"{b/1048576:.1f} MB"
+    return f"{b/1073741824:.1f} GB"
+
+
+@app.get("/api/system/cpu-info")
+async def cpu_info_api():
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, get_cpu_info)
+
+
+@app.get("/api/system/network-info")
+async def network_info_api():
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, get_network_info)
 
 class ActionRequest(BaseModel):
     action: str
@@ -442,14 +579,14 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 }
 
 /* Status pills in header */
-.hdr-stats {display:flex;gap:10px;flex:1;min-width:0;}
+.hdr-stats {display:flex;gap:10px;flex:1;min-width:0;justify-content:center;align-items:center;}
 .hdr-pill {
   display:flex;align-items:center;gap:6px;
   padding:6px 14px;border-radius:20px;border:1px solid var(--border);
   background:var(--bg2);font-size:12px;font-weight:600;white-space:nowrap;
-  transition:all var(--transition);
+  transition:all var(--transition);cursor:pointer;
 }
-.hdr-pill:hover {border-color:var(--accent);}
+.hdr-pill:hover {border-color:var(--accent);background:var(--card-hover);}
 .hdr-pill .icon {font-size:14px;}
 .hdr-pill .val {color:var(--text-bright);}
 .hdr-pill .sub {color:var(--text-dim);font-size:10px;font-weight:400;}
@@ -590,6 +727,32 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 
 @keyframes spin{to{transform:rotate(360deg);}}
 @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.5;}}
+
+/* ===== STATS DETAIL MODAL ===== */
+.stats-detail-overlay {
+  display:none;position:fixed;top:0;left:0;right:0;bottom:0;
+  background:rgba(0,0,0,0.5);z-index:350;backdrop-filter:blur(4px);
+  justify-content:center;align-items:center;
+}
+.stats-detail-overlay.show { display:flex; }
+.stats-detail-panel {
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:0 8px 32px var(--shadow);padding:24px 28px;
+  width:640px;max-width:90vw;max-height:80vh;overflow-y:auto;
+  animation:fadeIn 0.2s ease;
+}
+.stats-detail-panel .stats-detail-header {
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);
+}
+.stats-detail-panel .stats-detail-header h2 {
+  font-size:16px;font-weight:700;color:var(--text-bright);
+}
+.stats-detail-panel .close-btn {
+  cursor:pointer;font-size:20px;color:var(--text-dim);
+  transition:color var(--transition);line-height:1;
+}
+.stats-detail-panel .close-btn:hover { color:var(--text); }
 
 /* ===== DETAIL PANEL ===== */
 .detail-overlay {
@@ -759,7 +922,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 <div class="header">
   <div class="header-left">
     <h1><span class="icon">🐳</span> Docker Panel</h1>
-    <span class="hdr-ver" id="hdrVer">v1.3.0</span>
+    <span class="hdr-ver" id="hdrVer">v--</span>
     <button class="hdr-update-btn" id="hdrUpdateBtn" onclick="showUpdateModal()" style="display:none" title="有新版本可用">⬆ 版本更新</button>
   </div>
   <div class="hdr-stats" id="hdrStats"></div>
@@ -850,14 +1013,39 @@ async function loadData() {
   const btn = document.getElementById('refreshBtn'), icon = document.getElementById('refreshIcon');
   btn.classList.add('loading'); icon.classList.add('spin');
   document.getElementById('errorBanner').innerHTML = '';
+  statsDetailData = { cpu: null, mem: null, sys: null, net: null };
   try {
-    const [rA, rS] = await Promise.all([fetch(API+'/api/containers/all-stats'), fetch(API+'/api/system')]);
+    const [rA, rS, rCpu, rNet] = await Promise.all([
+      fetch(API+'/api/containers/all-stats'),
+      fetch(API+'/api/system'),
+      fetch(API+'/api/system/cpu-info'),
+      fetch(API+'/api/system/network-info')
+    ]);
     if (!rA.ok) { const e = await rA.json(); throw new Error(e.detail || 'API error'); }
     const data = await rA.json(), sysData = await rS.json();
     if (data.containers) allContainers = data.containers;
     const sys = {...(data.system||{}), ...(sysData||{})};
     renderPorts(sys);
     renderHdrStats(sys);
+    // Update CPU pill
+    if (rCpu.ok) {
+      const cpu = await rCpu.json();
+      const usage = cpu.total_usage || 0;
+      const c = usage>85?'var(--red)':usage>65?'var(--yellow)':'var(--green)';
+      const el = document.getElementById('hdrCpuVal');
+      const bar = document.getElementById('hdrCpuBar');
+      if (el) el.textContent = usage+'%';
+      if (bar) { bar.style.width = usage+'%'; bar.style.background = c; }
+    }
+    // Update Network pill
+    if (rNet.ok) {
+      const net = await rNet.json();
+      const ifaces = net.interfaces || [];
+      const totalRx = ifaces.reduce((s,i)=>s+i.rx_bytes,0);
+      const totalTx = ifaces.reduce((s,i)=>s+i.tx_bytes,0);
+      const el = document.getElementById('hdrNetVal');
+      if (el) el.textContent = formatBytes(totalRx)+'↓';
+    }
     renderCategories();
     renderContainers();
   } catch(e) {
@@ -883,18 +1071,27 @@ function renderHdrStats(sys) {
   const running = allContainers.filter(c=>c.state==='running').length, total = allContainers.length;
   let html = '';
 
+  // CPU pill
+  html += `<div class="hdr-pill" onclick="showCpuDetail()" title="点击查看CPU详情"><span class="icon">⚡</span><span class="val" id="hdrCpuVal">--</span><span class="sub">CPU</span><div class="bar"><div class="bar-fill" id="hdrCpuBar" style="width:0%;background:var(--green)"></div></div></div>`;
+
+  // Memory pill
   if (mem.total_mb) {
     const pct = mem.use_percent||0, c = pct>85?'var(--red)':pct>65?'var(--yellow)':'var(--green)';
-    html += `<div class="hdr-pill"><span class="icon">🧠</span><span class="val">${mem.use_percent}%</span><span class="sub">内存</span><div class="bar"><div class="bar-fill" style="width:${pct}%;background:${c}"></div></div></div>`;
+    html += `<div class="hdr-pill" onclick="showMemDetail()" title="点击查看内存详情"><span class="icon">🧠</span><span class="val">${mem.use_percent}%</span><span class="sub">内存</span><div class="bar"><div class="bar-fill" style="width:${pct}%;background:${c}"></div></div></div>`;
   }
 
+  // Network pill
+  html += `<div class="hdr-pill" onclick="showNetDetail()" title="点击查看网络详情"><span class="icon">🌐</span><span class="val" id="hdrNetVal">--</span><span class="sub">网络</span></div>`;
+
+  // System/Disk pills
   for (const [mnt, info] of Object.entries(disk)) {
     const pct = parseInt(info.use_percent)||0;
     const c = pct>85?'var(--red)':pct>65?'var(--yellow)':'var(--accent)';
     const lbl = mnt==='/'?'系统':mnt.replace('/volume','存储');
-    html += `<div class="hdr-pill"><span class="icon">💾</span><span class="val">${pct}%</span><span class="sub">${lbl}</span><div class="bar"><div class="bar-fill" style="width:${pct}%;background:${c}"></div></div></div>`;
+    html += `<div class="hdr-pill" onclick="showSysDetail()" title="点击查看系统详情"><span class="icon">💾</span><span class="val">${pct}%</span><span class="sub">${lbl}</span><div class="bar"><div class="bar-fill" style="width:${pct}%;background:${c}"></div></div></div>`;
   }
 
+  // Container count pill
   html += `<div class="hdr-pill green"><span class="icon">🐳</span><span class="val">${running}/${total}</span><span class="sub">容器</span></div>`;
 
   document.getElementById('hdrStats').innerHTML = html;
@@ -1099,12 +1296,299 @@ function showToast(msg,type) {
   setTimeout(()=>t.className='toast',3000);
 }
 
+// ===== STATS DETAIL MODAL =====
+let statsDetailData = { cpu: null, mem: null, sys: null, net: null };
+
+function showStatsDetailModal(title, html) {
+  document.getElementById('statsDetailTitle').textContent = title;
+  document.getElementById('statsDetailBody').innerHTML = html;
+  document.getElementById('statsDetailOverlay').classList.add('show');
+}
+function closeStatsDetailModal() {
+  document.getElementById('statsDetailOverlay').classList.remove('show');
+}
+
+async function showCpuDetail() {
+  const d = statsDetailData.cpu;
+  if (!d) {
+    showStatsDetailModal('⚡ CPU 详情', '<div style="color:var(--text-dim);padding:20px;text-align:center">加载中...</div>');
+    try {
+      const r = await fetch(API+'/api/system/cpu-info');
+      statsDetailData.cpu = await r.json();
+      return showCpuDetail();
+    } catch(e) {
+      return showStatsDetailModal('⚡ CPU 详情', '<div style="color:var(--red)">加载失败: '+e.message+'</div>');
+    }
+  }
+  let html = '';
+  if (d.model) html += `<div style="font-size:13px;color:var(--text-dim);margin-bottom:12px">${esc(d.model)}</div>`;
+  html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">`;
+  html += `<div class="detail-stat"><div class="stat-val">${d.total_usage||0}%</div><div class="stat-label">总体占用</div></div>`;
+  html += `<div class="detail-stat"><div class="stat-val">${d.cores||'-'}</div><div class="stat-label">核心数</div></div>`;
+  html += `<div class="detail-stat"><div class="stat-val">${d.freq||'-'}</div><div class="stat-label">频率</div></div>`;
+  html += `</div>`;
+  if (d.load_avg && d.load_avg.length) {
+    html += `<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px">负载均值: <b>${d.load_avg[0]}</b> (1min) &nbsp; <b>${d.load_avg[1]}</b> (5min) &nbsp; <b>${d.load_avg[2]}</b> (15min)</div>`;
+  }
+  if (d.per_core && d.per_core.length) {
+    html += `<div style="font-size:12px;font-weight:600;color:var(--text-dim);margin-bottom:8px">各核心占用</div>`;
+    html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:6px">`;
+    for (const core of d.per_core) {
+      const c = core.usage>85?'var(--red)':core.usage>65?'var(--yellow)':'var(--green)';
+      html += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:8px;text-align:center"><div style="font-size:14px;font-weight:700;color:${c}">${core.usage}%</div><div style="font-size:10px;color:var(--text-dim)">${core.core}</div></div>`;
+    }
+    html += `</div>`;
+  }
+  showStatsDetailModal('⚡ CPU 详情', html);
+}
+
+async function showMemDetail() {
+  const d = statsDetailData.mem;
+  if (!d) {
+    showStatsDetailModal('🧠 内存详情', '<div style="color:var(--text-dim);padding:20px;text-align:center">加载中...</div>');
+    try {
+      const r = await fetch(API+'/api/system');
+      const sys = await r.json();
+      statsDetailData.mem = sys.memory || {};
+      return showMemDetail();
+    } catch(e) {
+      return showStatsDetailModal('🧠 内存详情', '<div style="color:var(--red)">加载失败: '+e.message+'</div>');
+    }
+  }
+  const m = d;
+  const pct = m.use_percent||0, c = pct>85?'var(--red)':pct>65?'var(--yellow)':'var(--green)';
+  let html = '';
+  html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">`;
+  html += `<div class="detail-stat"><div class="stat-val">${pct}%</div><div class="stat-label">占用率</div></div>`;
+  html += `<div class="detail-stat"><div class="stat-val">${m.used_mb||0}MB</div><div class="stat-label">已用</div></div>`;
+  html += `<div class="detail-stat"><div class="stat-val">${m.total_mb||0}MB</div><div class="stat-label">总计</div></div>`;
+  html += `</div>`;
+  html += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:12px">`;
+  html += `<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">内存条</div>`;
+  html += `<div style="width:100%;height:12px;background:var(--border);border-radius:6px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${c};border-radius:6px;transition:width 0.6s ease"></div></div>`;
+  html += `<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:11px;color:var(--text-dim)"><span>已用 ${m.used_mb}MB</span><span>可用 ${m.available_mb}MB</span></div>`;
+  html += `</div>`;
+  // Container memory table
+  const running = allContainers.filter(x=>x.state==='running' && x.stats);
+  if (running.length) {
+    html += `<div style="font-size:12px;font-weight:600;color:var(--text-dim);margin-bottom:8px">容器内存占用</div>`;
+    html += `<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--text-dim);border-bottom:1px solid var(--border)"><th style="text-align:left;padding:4px 8px">容器</th><th style="text-align:right;padding:4px 8px">已用</th><th style="text-align:right;padding:4px 8px">限制</th><th style="text-align:right;padding:4px 8px">占用率</th></tr></thead><tbody>`;
+    running.sort((a,b)=>(b.stats.memory_usage_mb||0)-(a.stats.memory_usage_mb||0));
+    for (const ct of running) {
+      const mp = ct.stats.memory_percent||0;
+      const mc = mp>85?'var(--red)':mp>65?'var(--yellow)':'var(--green)';
+      html += `<tr style="border-bottom:1px solid var(--border)"><td style="padding:4px 8px;color:var(--text-bright)">${esc(ct.custom_name||ct.name)}</td><td style="text-align:right;padding:4px 8px">${ct.stats.memory_usage_mb}MB</td><td style="text-align:right;padding:4px 8px">${ct.stats.memory_limit_mb}MB</td><td style="text-align:right;padding:4px 8px;color:${mc}">${mp}%</td></tr>`;
+    }
+    html += `</tbody></table>`;
+  }
+  showStatsDetailModal('🧠 内存详情', html);
+}
+
+async function showSysDetail() {
+  const d = statsDetailData.sys;
+  if (!d) {
+    showStatsDetailModal('💾 系统详情', '<div style="color:var(--text-dim);padding:20px;text-align:center">加载中...</div>');
+    try {
+      const r = await fetch(API+'/api/system');
+      const sys = await r.json();
+      statsDetailData.sys = sys;
+      return showSysDetail();
+    } catch(e) {
+      return showStatsDetailModal('💾 系统详情', '<div style="color:var(--red)">加载失败: '+e.message+'</div>');
+    }
+  }
+  const disk = d.disk || {};
+  let html = '';
+  html += `<div style="font-size:12px;font-weight:600;color:var(--text-dim);margin-bottom:8px">磁盘占用</div>`;
+  for (const [mnt, info] of Object.entries(disk)) {
+    const pct = parseInt(info.use_percent)||0;
+    const c = pct>85?'var(--red)':pct>65?'var(--yellow)':'var(--accent)';
+    const lbl = mnt==='/'?'系统':mnt.replace('/volume','存储');
+    html += `<div style="margin-bottom:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px">`;
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-size:13px;font-weight:600">${lbl} <span style="color:var(--text-dim);font-size:11px;font-weight:400">${mnt}</span></span><span style="font-size:14px;font-weight:700;color:${c}">${pct}%</span></div>`;
+    html += `<div style="width:100%;height:8px;background:var(--border);border-radius:4px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${c};border-radius:4px"></div></div>`;
+    html += `<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:11px;color:var(--text-dim)"><span>已用 ${info.used}</span><span>总计 ${info.size}</span><span>可用 ${info.available}</span></div>`;
+    html += `</div>`;
+  }
+
+  // Container disk usage (SizeRw = writable layer size)
+  const containersWithDisk = allContainers.filter(x => x.full_id);
+  if (containersWithDisk.length) {
+    html += `<div style="font-size:12px;font-weight:600;color:var(--text-dim);margin:16px 0 8px">容器磁盘占用</div>`;
+    // Fetch disk usage for each container
+    const diskData = await Promise.all(containersWithDisk.map(async c => {
+      try {
+        const r = await fetch(API + '/api/container/' + c.id + '/disk');
+        if (!r.ok) return { id: c.id, name: c.custom_name || c.name, size: 0, error: true };
+        const j = await r.json();
+        return { id: c.id, name: c.custom_name || c.name, size: j.size_rw || 0 };
+      } catch(e) { return { id: c.id, name: c.custom_name || c.name, size: 0, error: true }; }
+    }));
+    const validData = diskData.filter(x => !x.error && x.size > 0).sort((a,b) => b.size - a.size);
+    if (validData.length) {
+      const maxSize = validData[0].size;
+      html += `<div style="display:flex;flex-direction:column;gap:4px">`;
+      for (const cd of validData) {
+        const barPct = maxSize > 0 ? Math.round(cd.size / maxSize * 100) : 0;
+        const c = barPct>80?'var(--red)':barPct>50?'var(--yellow)':'var(--accent)';
+        html += `<div style="display:flex;align-items:center;gap:8px;font-size:11px">`;
+        html += `<span style="min-width:100px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-bright)" title="${esc(cd.name)}">${esc(cd.name)}</span>`;
+        html += `<div style="flex:1;height:14px;background:var(--bg2);border:1px solid var(--border);border-radius:3px;overflow:hidden">`;
+        html += `<div style="width:${barPct}%;height:100%;background:${c};border-radius:2px;transition:width 0.5s ease"></div>`;
+        html += `</div>`;
+        html += `<span style="min-width:55px;text-align:right;color:var(--text-dim);font-family:monospace;font-size:10px">${formatBytes(cd.size)}</span>`;
+        html += `</div>`;
+      }
+      html += `</div>`;
+    } else {
+      html += `<div style="color:var(--text-dim);font-size:12px;padding:4px 0">暂无容器磁盘数据</div>`;
+    }
+  }
+
+  showStatsDetailModal('💾 系统详情', html);
+}
+
+async function showNetDetail() {
+  const d = statsDetailData.net;
+  if (!d) {
+    showStatsDetailModal('🌐 网络详情', '<div style="color:var(--text-dim);padding:20px;text-align:center">加载中...</div>');
+    try {
+      const r = await fetch(API+'/api/system/network-info');
+      statsDetailData.net = await r.json();
+      return showNetDetail();
+    } catch(e) {
+      return showStatsDetailModal('🌐 网络详情', '<div style="color:var(--red)">加载失败: '+e.message+'</div>');
+    }
+  }
+  let html = '';
+  if (d.hostname) html += `<div style="font-size:12px;color:var(--text-dim);margin-bottom:12px">主机名: <b>${esc(d.hostname)}</b> &nbsp; IP: <b>${esc(d.ip||'-')}</b></div>`;
+
+  // Filter to only non-docker interfaces (physical + main bridges)
+  const ifaces = (d.interfaces||[]).filter(i => !i.name.startsWith('docker') && !i.name.startsWith('veth') && !i.name.startsWith('br-') && i.name !== 'lo');
+  // If all filtered out, show top 5 by traffic
+  const showIfaces = ifaces.length ? ifaces : (d.interfaces||[]).sort((a,b)=>(b.rx_bytes+b.tx_bytes)-(a.rx_bytes+a.tx_bytes)).slice(0,5);
+
+  if (showIfaces.length) {
+    html += `<div style="font-size:12px;font-weight:600;color:var(--text-dim);margin-bottom:10px">网卡流量</div>`;
+    for (const iface of showIfaces) {
+      const totalBps = (iface.rx_bytes + iface.tx_bytes);
+      const isDefault = iface.is_default;
+      html += `<div style="margin-bottom:14px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 14px">`;
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">`;
+      html += `<div style="font-size:13px;font-weight:600">${esc(iface.name)} ${isDefault?'<span style="font-size:10px;color:var(--accent);background:rgba(88,166,255,0.1);padding:1px 6px;border-radius:3px">默认</span>':''}</div>`;
+      html += `<div style="font-size:11px;color:var(--text-dim)">↓ <b style="color:var(--green)">${iface.rx_human}</b> &nbsp; ↑ <b style="color:var(--accent)">${iface.tx_human}</b></div>`;
+      html += `</div>`;
+      // ECG-style canvas
+      const canvasId = 'net-ecg-' + iface.name.replace(/[^a-z0-9]/gi,'_');
+      html += `<canvas id="${canvasId}" width="560" height="60" style="width:100%;height:60px;border-radius:4px;background:var(--bg)"></canvas>`;
+      html += `</div>`;
+    }
+  } else {
+    html += `<div style="color:var(--text-dim);padding:20px;text-align:center">无网络接口信息</div>`;
+  }
+
+  // Container network table
+  const running = allContainers.filter(x=>x.state==='running' && x.stats);
+  if (running.length) {
+    html += `<div style="font-size:12px;font-weight:600;color:var(--text-dim);margin:16px 0 8px">容器网络流量</div>`;
+    html += `<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--text-dim);border-bottom:1px solid var(--border)"><th style="text-align:left;padding:4px 8px">容器</th><th style="text-align:right;padding:4px 8px">接收</th><th style="text-align:right;padding:4px 8px">发送</th></tr></thead><tbody>`;
+    running.sort((a,b)=>(b.stats.network_rx||0)-(a.stats.network_rx||0));
+    for (const ct of running) {
+      html += `<tr style="border-bottom:1px solid var(--border)"><td style="padding:4px 8px;color:var(--text-bright)">${esc(ct.custom_name||ct.name)}</td><td style="text-align:right;padding:4px 8px;color:var(--green)">${formatBytes(ct.stats.network_rx||0)}</td><td style="text-align:right;padding:4px 8px;color:var(--accent)">${formatBytes(ct.stats.network_tx||0)}</td></tr>`;
+    }
+    html += `</tbody></table>`;
+  }
+  showStatsDetailModal('🌐 网络详情', html);
+
+  // Draw ECG after DOM update
+  setTimeout(() => {
+    for (const iface of showIfaces) {
+      const canvasId = 'net-ecg-' + iface.name.replace(/[^a-z0-9]/gi,'_');
+      drawEcgCanvas(canvasId, iface.rx_bytes, iface.tx_bytes);
+    }
+  }, 50);
+}
+
+// ECG-style canvas drawing
+function drawEcgCanvas(canvasId, rxBytes, txBytes) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const mid = H / 2;
+
+  // Clear
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(48,54,61,0.5)';
+  ctx.lineWidth = 0.5;
+  for (let y = 0; y < H; y += 15) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+  for (let x = 0; x < W; x += 40) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+
+  // Baseline
+  ctx.strokeStyle = 'rgba(48,54,61,0.8)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(W, mid); ctx.stroke();
+
+  // Generate pseudo-waveform from bytes (deterministic seed)
+  const seed = (rxBytes + txBytes) || 1;
+  const points = 120;
+  const spikeInterval = Math.max(8, Math.floor(400000000 / (seed + 10000000)));
+
+  // RX waveform (green, upper half)
+  ctx.strokeStyle = 'rgba(63,185,80,0.9)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < points; i++) {
+    const x = (i / points) * W;
+    let y = mid * 0.5;
+    // ECG-like pattern: baseline with periodic spikes
+    const phase = (i + seed) % spikeInterval;
+    if (phase < 3) y -= 8 + (seed % 5);         // QRS up
+    else if (phase < 5) y += 4;                   // QRS down
+    else if (phase < 8) y -= 3;                   // T wave
+    else y += Math.sin((i + seed) * 0.3) * 2;    // noise
+    y = Math.max(2, Math.min(mid - 2, y));
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // TX waveform (blue, lower half)
+  ctx.strokeStyle = 'rgba(88,166,255,0.9)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < points; i++) {
+    const x = (i / points) * W;
+    let y = mid + mid * 0.3;
+    const phase = (i + seed * 2) % Math.max(6, spikeInterval - 2);
+    if (phase < 2) y += 6 + (seed % 4);
+    else if (phase < 4) y -= 3;
+    else y += Math.sin((i + seed * 2) * 0.25) * 1.5;
+    y = Math.max(mid + 2, Math.min(H - 2, y));
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Labels
+  ctx.font = '10px monospace';
+  ctx.fillStyle = 'rgba(63,185,80,0.7)';
+  ctx.fillText('↓RX', 4, 12);
+  ctx.fillStyle = 'rgba(88,166,255,0.7)';
+  ctx.fillText('↑TX', 4, H - 4);
+}
+
 // ===== UPDATE MODAL =====
 let updateInfo = null;
 
 function checkVersion() {
   fetch(API+'/api/version').then(r=>r.json()).then(data=>{
     updateInfo = data;
+    document.getElementById('hdrVer').textContent = 'v' + data.local;
     const btn = document.getElementById('hdrUpdateBtn');
     if (data.has_update) {
       btn.style.display = 'inline-flex';
@@ -1210,6 +1694,17 @@ setInterval(loadData,30000);
       <button onclick="closeUpdateModal()">稍后再说</button>
     </div>
     <div class="update-progress" id="updateProgress"></div>
+  </div>
+</div>
+
+<!-- Stats Detail Modal -->
+<div class="stats-detail-overlay" id="statsDetailOverlay" onclick="if(event.target===this)closeStatsDetailModal()">
+  <div class="stats-detail-panel">
+    <div class="stats-detail-header">
+      <h2 id="statsDetailTitle">详情</h2>
+      <span class="close-btn" onclick="closeStatsDetailModal()">✕</span>
+    </div>
+    <div id="statsDetailBody"></div>
   </div>
 </div>
 
