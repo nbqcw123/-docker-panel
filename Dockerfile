@@ -1,6 +1,14 @@
 FROM python:3.11-slim
+
 WORKDIR /app
-RUN pip install fastapi uvicorn pydantic -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
-COPY main.py version.json /app/
-EXPOSE 50087
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "50087"]
+
+RUN pip install --no-cache-dir fastapi uvicorn[standard] pydantic
+
+COPY main.py .
+
+EXPOSE 50088
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:50088/api/system', timeout=5)" || exit 1
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "50088", "--workers", "1"]
