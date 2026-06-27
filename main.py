@@ -203,8 +203,8 @@ def _detect_disk_targets() -> list:
                         continue
                 except:
                     pass
-                # Skip btrfs/zfs root on Synology (shows whole pool size, not real partition)
-                if fs_type in ("btrfs", "zfs") and mount == "/":
+                # Skip pseudo filesystems (show whole pool/storage, not real partition)
+                if fs_type in ("btrfs", "zfs", "overlay", "overlayfs") and mount == "/":
                     continue
                 if mount in ("/", "/boot", "/boot/efi"): targets.append(mount)
                 elif re.match(r"^/volume\d+$", mount): targets.append(mount)
