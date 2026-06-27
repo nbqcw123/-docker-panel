@@ -1,5 +1,3 @@
-Warning: Permanently added '100.70.222.38' (ED25519) to the list of known hosts.
-Could not chdir to home directory /home/admin: No such file or directory
 #!/usr/bin/env python3
 """Docker Management Panel - Backend (FastAPI)"""
 import json, subprocess, asyncio, re, os, socket, ssl, urllib.request, urllib.error, shutil, tempfile
@@ -210,6 +208,7 @@ def _detect_disk_targets() -> list:
                     continue
                 if mount in ("/", "/boot", "/boot/efi"): targets.append(mount)
                 elif re.match(r"^/host/vol\d+$", mount): targets.append(mount)
+                elif re.match(r"^/host/volume\d+$", mount): targets.append(mount)
                 elif re.match(r"^/volume\d+$", mount): targets.append(mount)
                 elif re.match(r"^/vol\d+$", mount): targets.append(mount)
                 elif re.match(r"^/volume\d+/", mount): targets.append(mount)
