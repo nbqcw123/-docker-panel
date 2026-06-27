@@ -14,4 +14,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # 启动
-exec python3 -m uvicorn main:app --host 0.0.0.0 --port 50087
+# 启动（支持：环境变量 APP_PORT=50090 或 --port 参数覆盖）
+PORT="\${APP_PORT:-50087}"
+exec python3 -m uvicorn main:app --host 0.0.0.0 --port $PORT

@@ -25,11 +25,14 @@ sudo $DOCKER build -t $IMAGE_NAME .
 
 echo "=== 启动容器 ==="
 # ⚠️ 必须挂载 docker.sock，否则容器管理 API 会 500 错误
+# 挂载宿主机根文件系统，用于获取磁盘/共享文件夹信息
 sudo $DOCKER run -d \
   --name $CONTAINER_NAME \
   --restart always \
   -p $PORT:50087 \
   -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /:/host:ro \
+  -e HOST_ROOT=/host \
   $IMAGE_NAME
 
 echo "=== 部署完成 ==="
