@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-VERSION = "1.4.1"
+VERSION = "1.4.9"
 GITHUB_REPO = "nbqcw123/docker-panel"
 GITHUB_RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_REPO}/master"
 
@@ -1689,7 +1689,7 @@ function showDiskModal() {
 }
 
 function showAboutModal() {
-  const currentVersion = '1.4.7';
+  const currentVersion = '1.4.9';
   const author = 'nbqcw123';
   const repo = 'nbqcw123/docker-panel';
   const repoUrl = `https://github.com/${repo}`;
@@ -1745,9 +1745,9 @@ async function checkForUpdate(btn) {
     const data = await resp.json();
     
     if (data.has_update) {
-      resultDiv.innerHTML = `<div style="color:var(--yellow);font-weight:600">🔔 有新版本可用!</div><div style="margin-top:6px">最新版本: <b>${data.remote}</b></div><div>当前版本: <b>${data.local}</b></div>${data.changelog && data.changelog.length > 0 ? `<div style="margin-top:8px;text-align:left"><b>更新内容:</b><ul style="margin:4px 0;padding-left:20px">${data.changelog.map(c => `<li>${c}</li>`).join('')}</ul></div>` : ''}`;
+      resultDiv.innerHTML = `<div style="color:var(--yellow);font-weight:600">🔔 有新版本可用!</div><div style="margin-top:6px">当前版本: <b>v${data.local}</b> → 最新版本: <b>v${data.remote}</b></div>${data.changelog && data.changelog.length > 0 ? `<div style="margin-top:8px;text-align:left"><b>更新内容:</b><ul style="margin:4px 0;padding-left:20px">${data.changelog.map(c => `<li>${c}</li>`).join('')}</ul></div>` : ''}`;
     } else {
-      resultDiv.innerHTML = `<div style="color:var(--green);font-weight:600">✅ 已是最新版本</div><div style="margin-top:4px">当前版本: <b>${data.local}</b></div>`;
+      resultDiv.innerHTML = `<div style="color:var(--green);font-weight:600">✅ 已是最新版本 (v${data.local})</div>`;
     }
   } catch (e) {
     resultDiv.innerHTML = `<div style="color:var(--red)">❌ 检查失败: ${e.message}</div>`;
