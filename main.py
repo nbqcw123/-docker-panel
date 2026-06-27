@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-VERSION = "1.4.9"
+VERSION = "1.5.0"
 GITHUB_REPO = "nbqcw123/docker-panel"
 GITHUB_RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_REPO}/master"
 
@@ -84,6 +84,77 @@ async def get_version():
 class UpdateRequest(BaseModel):
     target_version: str = ""
     source_url: str = ""  # optional: force specific source
+
+@app.get("/api/check-update")
+async def check_update():
+    """Check if a newer version is available on GitHub"""
+    remote = _get_remote_version()
+    local_version = VERSION
+    remote_version = remote.get("version", "") if remote else ""
+    has_update = False
+    if remote_version:
+        has_update = _version_tuple(remote_version) > _version_tuple(local_version)
+    return {
+        "currentVersion": local_version,
+        "latestVersion": remote_version,
+        "updateAvailable": has_update,
+        "changelog": remote.get("changelog", []) if remote else [],
+        "downloadUrl": f"https://github.com/{GITHUB_REPO}/releases/latest"
+    }
+
+@app.post("/api/upgrade")
+async def do_upgrade():
+    """Pull latest image, rebuild container, and restart service"""
+    import subprocess as sp
+    container_name = "docker-panel"
+    image_name = "docker-panel:latest"
+    logs = []
+    try:
+        # Step 1: Pull latest image from Docker Hub
+        logs.append("正在拉取最新镜像...")
+        pull_result = sp.run(["docker", "pull", image_name], capture_output=True, text=True, timeout=180)
+        if pull_result.returncode != 0:
+            logs.append(f"拉取失败: {pull_result.stderr[:200]}")
+            return {"success": False, "message": "\n".join(logs)}
+        logs.append("镜像拉取完成")
+
+        # Step 2: Stop current container
+        logs.append("正在停止当前容器...")
+        try:
+            sp.run(["docker", "stop", container_name], timeout=30)
+        except:
+            pass
+
+        # Step 3: Remove old container
+        try:
+            sp.run(["docker", "rm", container_name], timeout=15)
+        except:
+            pass
+        logs.append("旧容器已清理")
+
+        # Step 4: Run new container
+        host_port = "50087"
+        internal_port = "50087"
+        run_cmd = [
+            "docker", "run", "-d",
+            "--name", container_name,
+            "--restart", "unless-stopped",
+            "-p", f"{host_port}:{internal_port}",
+            "-v", "/var/run/docker.sock:/var/run/docker.sock",
+            "-v", "/:/host:ro",
+            "-e", "HOST_ROOT=/host",
+            "-w", "/app",
+            image_name
+        ]
+        logs.append("正在启动新容器...")
+        run_result = sp.run(run_cmd, capture_output=True, text=True, timeout=60)
+        if run_result.returncode != 0:
+            logs.append(f"启动失败: {run_result.stderr[:200]}")
+            return {"success": False, "message": "\n".join(logs)}
+        logs.append("升级成功，容器已重启")
+        return {"success": True, "message": "\n".join(logs)}
+    except Exception as e:
+        return {"success": False, "message": f"升级失败: {str(e)}\n" + "\n".join(logs)}
 
 @app.get("/api/sources")
 async def check_sources():
@@ -1754,7 +1825,7 @@ function showDiskModal() {
 }
 
 function showAboutModal() {
-  const currentVersion = '1.4.9';
+  const currentVersion = '1.5.0';
   const author = 'nbqcw123';
   const repo = 'nbqcw123/docker-panel';
   const repoUrl = `https://github.com/${repo}`;
@@ -1810,9 +1881,9 @@ async function checkForUpdate(btn) {
     const data = await resp.json();
     
     if (data.has_update) {
-      resultDiv.innerHTML = `<div style="color:var(--yellow);font-weight:600">🔔 有新版本可用!</div><div style="margin-top:6px">当前版本: <b>v${data.local}</b> → 最新版本: <b>v${data.remote}</b></div>${data.changelog && data.changelog.length > 0 ? `<div style="margin-top:8px;text-align:left"><b>更新内容:</b><ul style="margin:4px 0;padding-left:20px">${data.changelog.map(c => `<li>${c}</li>`).join('')}</ul></div>` : ''}`;
+      resultDiv.innerHTML = `<div style="color:var(--yellow);font-weight:600">🔔 有新版本可用!</div><div style="margin-top:6px">当前版本: <b>v${data.local}</b> → 最新版本: <b>v${data.remote}</b></div>${data.changelog && data.changelog.length > 0 ? `<div style="margin-top:8px;text-align:left"><b>更新内容:</b><ul style="margin:4px 0;padding-left:20px">${data.changelog.map(c => `<li>${c}</li>`).join('')}</ul></div>` : ''}<div style="margin-top:12px"><button onclick="doUpgrade(this)" style="padding:8px 20px;background:#3fb950;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer"> 立即升级</button></div>`;
     } else {
-      resultDiv.innerHTML = `<div style="color:var(--green);font-weight:600">✅ 已是最新版本 (v${data.local})</div>`;
+      resultDiv.innerHTML = `<div style="color:var(--green);font-weight:600">✅ 已是最新版本 (v${data.local})</div><div style="margin-top:8px"><button onclick="doUpgrade(this)" style="padding:8px 20px;background:var(--accent-dim);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer"> 重新部署</button></div>`;
     }
   } catch (e) {
     resultDiv.innerHTML = `<div style="color:var(--red)">❌ 检查失败: ${e.message}</div>`;
@@ -1820,6 +1891,34 @@ async function checkForUpdate(btn) {
   
   btn.disabled = false;
   btn.textContent = '🔄 检查更新';
+}
+
+async function doUpgrade(btn) {
+  const originalText = btn ? btn.textContent : ' 立即升级';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = ' 升级中...';
+  }
+  try {
+    const resp = await fetch('/api/upgrade', {method: 'POST'});
+    const data = await resp.json();
+    if (data.success) {
+      showToast(' 升级成功，正在重启服务...', 'success');
+      setTimeout(() => location.reload(), 5000);
+    } else {
+      showToast(' 升级失败: ' + (data.message || '未知错误'), 'error');
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
+    }
+  } catch (e) {
+    showToast(' 升级请求失败: ' + e.message, 'error');
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }
 }
 function showCpuModal() {
   const cpu = lastSysData?.cpu || {};
