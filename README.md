@@ -21,7 +21,7 @@
 
 ## 🚀 快速开始
 
-### Docker 运行（通用）
+### Docker 容器（通用）
 
 ```bash
 docker build -t docker-panel:latest .
@@ -31,11 +31,22 @@ docker run -d --name docker-panel -p 50087:50087 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   --restart always docker-panel:latest
 
-# 群晖 Synology（host 网络模式）
-docker run -d --name docker-panel --network host \
-  -v /var/run/docker.sock:/var/run/docker.sock:ro \
-  --restart unless-stopped docker-panel:latest
+# 群晖 Synology（bridge 模式，推荐）
+docker run -d --name docker-panel --restart always \
+  -p 50087:50087 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  docker-panel:latest
 ```
+
+### 群晖 Synology 快速部署
+
+```bash
+git clone https://github.com/nbqcw123/docker-panel.git
+cd docker-panel
+bash build-nas.sh
+```
+
+> ⚠️ **重要**：群晖上必须挂载 `/var/run/docker.sock`，否则容器管理 API 会返回 500 错误，页面显示"无法加载"。
 
 ### 飞牛 fnOS 快速部署
 
