@@ -55,12 +55,17 @@ bash build-nas.sh
 ### 飞牛 fnOS 快速部署
 
 ```bash
+# 方式1：克隆后直接运行部署脚本
 git clone https://github.com/nbqcw123/docker-panel.git
 cd docker-panel
 bash build-fnOS.sh
+
+# 方式2：如果飞牛无法访问 GitHub，可手动上传代码到 NAS 后执行：
+# 将 docker-panel 项目上传到飞牛任意目录，进入该目录运行：
+bash build-fnOS.sh
 ```
 
-> ⚠️ **重要**：飞牛上需要挂载 `/:/host:ro` 并设置 `HOST_ROOT=/host`，否则磁盘检测会不准确。
+> ⚠️ **重要**：`build-fnOS.sh` 会自动 git clone/pull 代码、构建镜像并启动容器（含 `/:/host:ro` 挂载和 `HOST_ROOT=/host` 环境变量）。
 
 ### 直接运行 Python
 
