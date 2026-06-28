@@ -29,12 +29,16 @@ docker build -t docker-panel:latest .
 # 标准 Linux / 飞牛 fnOS
 docker run -d --name docker-panel -p 50087:50087 \
   -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /:/host:ro \
+  -e HOST_ROOT=/host \
   --restart always docker-panel:latest
 
 # 群晖 Synology（bridge 模式，推荐）
 docker run -d --name docker-panel --restart always \
   -p 50087:50087 \
   -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /:/host:ro \
+  -e HOST_ROOT=/host \
   docker-panel:latest
 ```
 
@@ -51,10 +55,12 @@ bash build-nas.sh
 ### 飞牛 fnOS 快速部署
 
 ```bash
-git clone -b fnos https://github.com/nbqcw123/docker-panel.git
+git clone https://github.com/nbqcw123/docker-panel.git
 cd docker-panel
 bash build-fnOS.sh
 ```
+
+> ⚠️ **重要**：飞牛上需要挂载 `/:/host:ro` 并设置 `HOST_ROOT=/host`，否则磁盘检测会不准确。
 
 ### 直接运行 Python
 
@@ -79,7 +85,8 @@ Docker 二进制路径和磁盘挂载点均为**自动检测**，无需手动配
 |------|------|------|
 | GET | `/` | Web 面板页面 |
 | GET | `/api/version` | 版本信息（本地/远程/更新检测） |
-| POST | `/api/update` | 从 GitHub 下载最新版本 |
+| GET | `/api/check-update` | 检查是否有新版本（含 changelog） |
+| POST | `/api/upgrade` | 一键自升级（拉取代码→重建容器） |
 | POST | `/api/restart` | 重启面板服务 |
 | GET | `/api/containers` | 获取所有容器列表 |
 | GET | `/api/containers/all-stats` | 容器列表 + 实时统计 |
@@ -97,11 +104,11 @@ Docker 二进制路径和磁盘挂载点均为**自动检测**，无需手动配
 
 | 文件 | 说明 |
 |------|------|
-| `main.py` | 后端 FastAPI + 前端 HTML（单文件，2171行） |
+| `main.py` | 后端 FastAPI + 前端 HTML（单文件，2346行） |
 | `version.json` | 版本信息 |
 | `Dockerfile` | Docker 镜像构建 |
-| `build-fnOS.sh` | 飞牛 fnOS 部署脚本（fnos 分支） |
-| `run-fnOS.sh` | 飞牛 fnOS 直接运行脚本（fnos 分支） |
+| `build-fnOS.sh` | 飞牛 fnOS 部署脚本 |
+| `run-fnOS.sh` | 飞牛 fnOS 直接运行脚本 |
 | `README.md` | 本文档 |
 
 ## 📝 更新日志
